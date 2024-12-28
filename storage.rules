@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isTeacher() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isAdmin() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Profile images
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Lesson materials
+    match /lessons/{lessonId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isTeacher() || isAdmin());
+    }
+
+    // Session resources
+    match /sessions/{sessionId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        isTeacher() || 
+        exists(/databases/(default)/documents/sessions/$(sessionId)/participants/$(request.auth.uid))
+      );
+    }
+
+    // Shared resources
+    match /resources/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isTeacher() || isAdmin());
+    }
+
+    // Temporary files (like chat attachments)
+    match /temp/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.metadata.uploadedBy || 
+        isAdmin()
+      );
+    }
+  }
+}
